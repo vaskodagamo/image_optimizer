@@ -2,7 +2,7 @@
 /**
  * imageOptimizer.js
  * -------------------------------------------------------------
- * Author: Lukas Vosylius (refactored)
+ * Author: Lukas Vosylius 
  * License: GNU General Public License v3.0
  * Date: 2025.06.04
  * -------------------------------------------------------------
