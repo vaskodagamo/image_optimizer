@@ -61,7 +61,7 @@ const program = new Command();
 program
   .name('imageOptimizer')
   .description('Resize and compress images, mirroring folder structure.')
-  .version('1.0.0')
+  .version('1.2.0')
   .argument('[inputDir]', 'Source directory', 'input')
   .argument('[outputDir]', 'Destination directory', 'output')
   .option('-q, --quality <number>', 'JPEG quality (1–100)', parseIntegerInRange(1, 100), 75)
