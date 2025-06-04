@@ -42,25 +42,37 @@ node imageOptimizer.js [inputDir] [outputDir] [options]
 ````bash
 # Just run – uses ./input → ./output; keeps filenames; lossless PNG
 node imageOptimizer.js -q 80
+````
 
+````bash
 # Custom paths + extra flags
 node imageOptimizer.js ./photos ./publish -q 85 -P 70 --rename --force-delete
-
+```
 # Lossy PNG quantisation only (quality 60)
 node imageOptimizer.js -P 60
+````
 
+````bash
 # High‑quality JPEGs (q=90) and rename output files
 node imageOptimizer.js --rename -q 90
+````
 
+````bash
 # Raw → Web: lossy PNG + JPEG with custom folders
 node imageOptimizer.js ./raw ./web -q 85 --compress-png
+````
 
+````bash
 # Wipe output folder automatically, then process with defaults
 node imageOptimizer.js --force-delete
+````
 
+````bash
 # Just run – uses ./input → ./output, keeps filenames, lossless PNG
 node imageOptimizer.js -q 80
+````
 
+````bash
 # Custom paths + extra flags
 node imageOptimizer.js ./photos ./publish -q 85 -P 70 --rename --force-delete
 ````
