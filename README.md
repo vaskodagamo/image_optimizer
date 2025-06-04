@@ -39,7 +39,7 @@ node imageOptimizer.js [inputDir] [outputDir] [options]
 
 ### Examples
 
-###### Just run – uses ./input → ./output; keeps filenames; lossless PNG
+##### Just run – uses ./input → ./output; keeps filenames; lossless PNG
 ````bash
 node imageOptimizer.js -q 80
 ````
