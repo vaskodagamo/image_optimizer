@@ -72,7 +72,9 @@ program
   .parse(process.argv);
 
 const options = program.opts();
-const [rawInputDir, rawOutputDir] = program.args;
+
+// Provide defaults here if no positional args were passed:
+const [rawInputDir = 'input', rawOutputDir = 'output'] = program.args;
 
 const srcDir = path.resolve(rawInputDir);
 const destDir = path.resolve(rawOutputDir);
