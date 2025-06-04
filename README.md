@@ -47,7 +47,9 @@ node imageOptimizer.js -q 80
 ````bash
 # Custom paths + extra flags
 node imageOptimizer.js ./photos ./publish -q 85 -P 70 --rename --force-delete
-```
+````
+
+````bash
 # Lossy PNG quantisation only (quality 60)
 node imageOptimizer.js -P 60
 ````
