@@ -2,36 +2,23 @@
 /**
  * imageOptimizer.js
  * -------------------------------------------------------------
- * Author: Lukas Vosylius
+ * Author: Lukas Vosylius (refactored)
  * License: GNU General Public License v3.0
  * Date: 2025.06.04
- * -------------------------------------------------------------- 
- *
- * Resize images to a maximum width of **1920 px** (height scaled automatically).
- *
- * • **PNG** files stay PNG – choose lossless (default) or lossy compression.
- * • All other formats become **JPEG** with adjustable quality (MozJPEG).
- * • Folder hierarchy inside the **input** directory is mirrored in the
- *   **output** directory.
- * • Default paths: `./input`  →  `./output`.
- *   Supply other folders on the command line if you need different paths.
- * • **Optional** renaming with `--rename` → `<top-folder>-<index>.<ext>`.
- * • **Safety prompt**: if the *output* folder already contains files, the script
- *   asks whether to delete them first. Use `--force-delete` to skip the prompt
- *   and wipe automatically.
- *
  * -------------------------------------------------------------
+ *
+ * Resize images to a maximum width of 1920px (height scaled automatically).
+ *
+ * • PNG files stay PNG – choose lossless (default) or lossy compression.
+ * • All other formats become JPEG with adjustable quality (MozJPEG).
+ * • Folder hierarchy inside the input directory is mirrored in the output directory.
+ * • Default paths: ./input → ./output. Supply other folders on the command line if needed.
+ * • Optional renaming with --rename → <top-folder>-<index>.<ext>.
+ * • Safety prompt: if the output folder already contains files, the script asks
+ *   whether to delete them first. Use --force-delete to skip the prompt and wipe automatically.
+ *
  * Usage
- * -------------------------------------------------------------
- *   node imageOptimizer.js [inputDir] [outputDir] [options]
- *
- * Options
- *   -q, --quality <n>       JPEG quality   1–100  (default 75)
- *   --compress-png          Quantise PNGs (palette) instead of lossless
- *   -P, --png-quality <n>   PNG quality    1–100  (default 80, implies --compress-png)
- *   --rename                Rename files to <folder>-<index>.<ext>
- *   --force-delete          Delete existing output dir without asking
- *   -h, --help              Show this help
+ *   node imageOptimizer.js [options] [inputDir] [outputDir]
  *
  * Examples
  *   # Just run – uses ./input → ./output, keeps filenames, lossless PNG
@@ -40,199 +27,246 @@
  *   # Custom paths + extra flags
  *   node imageOptimizer.js ./photos ./publish -q 85 -P 70 --rename --force-delete
  *
- * -------------------------------------------------------------
  * Requires
- * -------------------------------------------------------------
- *   npm install sharp
- *   Node ≥ 18.17 LTS (or 20+) suggested.
+ *   npm install sharp commander
+ *   Node ≥ 18.17 LTS (or 20+) suggested.
  */
 
-import fs from "fs/promises";
-import { existsSync } from "fs";
-import path from "path";
-import readline from "readline";
-import sharp from "sharp";
+import fs from 'fs/promises';
+import { existsSync } from 'fs';
+import path from 'path';
+import readline from 'readline';
+import { Command } from 'commander';
+import sharp from 'sharp';
 
 // -------------------------------------------------------------
-// Helper: yes/no prompt
+// Supported extensions and default values
 // -------------------------------------------------------------
+const SUPPORTED_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.tiff',
+  '.gif',
+  '.avif',
+  '.bmp',
+]);
+
+// -------------------------------------------------------------
+// CLI Configuration (commander)
+// -------------------------------------------------------------
+const program = new Command();
+
+program
+  .name('imageOptimizer')
+  .description('Resize and compress images, mirroring folder structure.')
+  .version('1.0.0')
+  .argument('[inputDir]', 'Source directory', 'input')
+  .argument('[outputDir]', 'Destination directory', 'output')
+  .option('-q, --quality <number>', 'JPEG quality (1–100)', parseIntegerInRange(1, 100), 75)
+  .option('--compress-png', 'Quantize PNGs (palette) instead of lossless', false)
+  .option('-P, --png-quality <number>', 'PNG quality (1–100, implies --compress-png)', parseIntegerInRange(1, 100), 80)
+  .option('--rename', 'Rename files to <folder>-<index>.<ext>', false)
+  .option('--force-delete', 'Delete existing output dir without asking', false)
+  .parse(process.argv);
+
+const options = program.opts();
+const [rawInputDir, rawOutputDir] = program.args;
+
+const srcDir = path.resolve(rawInputDir);
+const destDir = path.resolve(rawOutputDir);
+
+let jpegQuality = options.quality;
+let compressPNG = options.compressPng || false;
+let pngQuality = options.pngQuality;
+let renameFiles = options.rename;
+let forceDelete = options.forceDelete;
+
+/**
+ * Parse an integer and ensure it falls within a closed range.
+ * Used as a custom argument parser for commander.
+ *
+ * @param {number} min
+ * @param {number} max
+ * @returns {(value: string) => number}
+ */
+function parseIntegerInRange(min, max) {
+  return (value) => {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+      throw new Error(`Value must be an integer between ${min} and ${max}`);
+    }
+    return parsed;
+  };
+}
+
+/**
+ * Prompt the user with a yes/no question in the console.
+ *
+ * @param {string} question
+ * @returns {Promise<boolean>}
+ */
 async function askYesNo(question) {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await new Promise(resolve => rl.question(question, resolve));
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  const answer = await new Promise((resolve) => {
+    rl.question(question, (ans) => {
+      resolve(ans.trim());
+    });
+  });
   rl.close();
-  return /^y(es)?$/i.test(answer.trim());
+  return /^y(es)?$/i.test(answer);
 }
 
-// -------------------------------------------------------------
-// CLI parsing
-// -------------------------------------------------------------
-const argv = process.argv.slice(2);
-const posArgs = [];
-
-let jpegQuality = 75;
-let compressPNG = false;
-let pngQuality  = 80;
-let renameFiles = false;
-let forceDelete = false;
-
-for (let i = 0; i < argv.length; i++) {
-  const arg = argv[i];
-  if (arg.startsWith("-")) {
-    switch (arg) {
-      case "-q":
-      case "--quality": {
-        const val = Number(argv[++i]);
-        if (!Number.isFinite(val) || val < 1 || val > 100) {
-          console.error("JPEG quality must be 1–100");
-          process.exit(1);
-        }
-        jpegQuality = val;
-        break;
-      }
-      case "-P":
-      case "--png-quality": {
-        const val = Number(argv[++i]);
-        if (!Number.isFinite(val) || val < 1 || val > 100) {
-          console.error("PNG quality must be 1–100");
-          process.exit(1);
-        }
-        pngQuality  = val;
-        compressPNG = true;
-        break;
-      }
-      case "--compress-png":
-        compressPNG = true;
-        break;
-      case "--rename":
-        renameFiles = true;
-        break;
-      case "--force-delete":
-        forceDelete = true;
-        break;
-      case "-h":
-      case "--help":
-        showHelp();
-        break;
-      default:
-        console.error(`Unknown option: ${arg}`);
-        showHelp();
-    }
-  } else {
-    posArgs.push(arg);
-  }
-}
-
-function showHelp() {
-  console.log(`\nUsage: node imageOptimizer.js [inputDir] [outputDir] [options]\n\n` +
-    `Default directories: ./input  →  ./output\n\n` +
-    `Options:\n` +
-    `  -q, --quality <n>       JPEG quality   1–100 (default 75)\n` +
-    `  --compress-png          Quantise PNGs (palette) instead of lossless\n` +
-    `  -P, --png-quality <n>   PNG quality    1–100 (default 80, implies --compress-png)\n` +
-    `  --rename                Rename files to <folder>-<index>.<ext>\n` +
-    `  --force-delete          Delete existing output dir without asking\n` +
-    `  -h, --help              Show help\n`);
-  process.exit();
-}
-
-const srcDir  = path.resolve(posArgs[0] ?? "input");
-const destDir = path.resolve(posArgs[1] ?? "output");
-
-if (!existsSync(srcDir)) {
-  console.error(`Input directory "${srcDir}" does not exist.`);
-  process.exit(1);
-}
-
-// -------------------------------------------------------------
-// Handle existing output dir
-// -------------------------------------------------------------
-if (existsSync(destDir)) {
-  const files = await fs.readdir(destDir);
-  if (files.length) {
-    let doDelete = forceDelete;
-    if (!forceDelete) {
-      doDelete = await askYesNo(`Output directory "${path.relative(process.cwd(), destDir)}" already contains ${files.length} item(s). Delete them first? [y/N] `);
-    }
-    if (doDelete) {
-      await fs.rm(destDir, { recursive: true, force: true });
-      console.log("Previous optimised images deleted.");
-    }
-  }
-}
-await fs.mkdir(destDir, { recursive: true });
-
-// -------------------------------------------------------------
-// Constants & counters
-// -------------------------------------------------------------
-const SUPPORTED_EXT = new Set([ ".jpg", ".jpeg", ".png", ".webp", ".tiff", ".gif", ".avif", ".bmp" ]);
-const counters = new Map();
-function nextIndex(folder) {
-  const n = counters.get(folder) || 1;
-  counters.set(folder, n + 1);
-  return n;
-}
-
-// -------------------------------------------------------------
-// Directory traversal
-// -------------------------------------------------------------
-async function processDir(dir) {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      const rel = path.relative(srcDir, fullPath);
-      await fs.mkdir(path.join(destDir, rel), { recursive: true });
-      await processDir(fullPath);
-    } else if (entry.isFile()) {
-      const ext = path.extname(entry.name).toLowerCase();
-      if (SUPPORTED_EXT.has(ext)) {
-        await optimiseImage(fullPath, ext);
-      }
-    }
-  }
-}
-
-// -------------------------------------------------------------
-// Optimise single file
-// -------------------------------------------------------------
-async function optimiseImage(filePath, ext) {
+/**
+ * Process a single image file: resize, compress, convert as needed,
+ * and write to the mirrored destination directory.
+ *
+ * @param {string} filePath - Absolute path to the source image.
+ */
+async function optimiseImage(filePath) {
   try {
-    const relDir   = path.relative(srcDir, path.dirname(filePath));
-    const parts    = relDir.split(path.sep).filter(Boolean);
-    const top      = parts.length ? parts[0] : path.basename(srcDir);
-    const baseName = path.basename(filePath, path.extname(filePath));
+    const relativeDir = path.relative(srcDir, path.dirname(filePath));
+    const pathSegments = relativeDir.split(path.sep).filter(Boolean);
+    const topFolder = pathSegments.length ? pathSegments[0] : path.basename(srcDir);
+    const originalName = path.basename(filePath, path.extname(filePath));
 
-    const idx      = renameFiles ? nextIndex(top) : null;
-    const newBase  = renameFiles ? `${top}-${idx}` : baseName;
-    const destExt  = ext === ".png" ? ".png" : ".jpg";
-    const destPath = path.join(destDir, relDir, newBase + destExt);
+    const index = renameFiles ? getNextIndex(topFolder) : null;
+    const baseName = renameFiles ? `${topFolder}-${index}` : originalName;
+    const sourceExt = path.extname(filePath).toLowerCase();
+    const targetExt = sourceExt === '.png' ? '.png' : '.jpg';
+
+    const destinationPath = path.join(destDir, relativeDir, baseName + targetExt);
+    await fs.mkdir(path.dirname(destinationPath), { recursive: true });
 
     const image = sharp(filePath);
-    const meta  = await image.metadata();
+    const metadata = await image.metadata();
 
-    let pipeline = image.resize({ width: meta.width && meta.width > 1920 ? 1920 : undefined });
+    // Only resize if width > 1920
+    const resizeOptions = {};
+    if (metadata.width && metadata.width > 1920) {
+      resizeOptions.width = 1920;
+    }
+    let pipeline = image.resize(resizeOptions);
 
-    if (ext === ".png") {
-      pipeline = compressPNG
-        ? pipeline.png({ quality: pngQuality, palette: true, compressionLevel: 9 })
-        : pipeline.png({ compressionLevel: 9, adaptiveFiltering: true });
+    if (sourceExt === '.png') {
+      if (compressPNG) {
+        pipeline = pipeline.png({
+          quality: pngQuality,
+          palette: true,
+          compressionLevel: 9,
+        });
+      } else {
+        pipeline = pipeline.png({
+          compressionLevel: 9,
+          adaptiveFiltering: true,
+        });
+      }
     } else {
-      pipeline = pipeline.jpeg({ quality: jpegQuality, mozjpeg: true });
+      pipeline = pipeline.jpeg({
+        quality: jpegQuality,
+        mozjpeg: true,
+      });
     }
 
-    await fs.mkdir(path.dirname(destPath), { recursive: true });
-    await pipeline.toFile(destPath);
+    await pipeline.toFile(destinationPath);
 
-    const status = ext === ".png" ? (compressPNG ? `PNG q=${pngQuality}` : "PNG lossless") : `JPEG q=${jpegQuality}`;
-    const renameNote = renameFiles ? ", renamed" : "";
-    console.log(`✅ ${path.relative(srcDir, filePath)} → ${path.relative(destDir, destPath)} (${status}${renameNote})`);
+    const status = sourceExt === '.png'
+      ? compressPNG
+        ? `PNG q=${pngQuality}`
+        : 'PNG (lossless)'
+      : `JPEG q=${jpegQuality}`;
+    const renameNote = renameFiles ? ', renamed' : '';
+
+    console.log(
+      `✅ ${path.relative(srcDir, filePath)} → ${path.relative(destDir, destinationPath)} (${status}${renameNote})`
+    );
   } catch (err) {
-    console.error(`❌ Failed to process ${filePath}:`, err.message);
+    console.error(`❌ Failed to process "${filePath}": ${err.message}`);
   }
 }
 
-// -------------------------------------------------------------
-// Go!
-// -------------------------------------------------------------
-await processDir(srcDir);
-console.log("Done! Optimised images are in:", destDir);
+/**
+ * Traverse a directory recursively and process all supported image files.
+ *
+ * @param {string} directory - Absolute path to the directory to process.
+ */
+async function processDirectory(directory) {
+  const entries = await fs.readdir(directory, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      const relSubdir = path.relative(srcDir, fullPath);
+      await fs.mkdir(path.join(destDir, relSubdir), { recursive: true });
+      await processDirectory(fullPath);
+    } else if (entry.isFile()) {
+      const ext = path.extname(entry.name).toLowerCase();
+      if (SUPPORTED_EXTENSIONS.has(ext)) {
+        await optimiseImage(fullPath);
+      }
+    }
+  }
+}
+
+// Map to keep track of renaming indices per top-level folder
+const renameCounters = new Map();
+
+/**
+ * Get the next index number for files in a given folder,
+ * used when --rename is enabled.
+ *
+ * @param {string} folder
+ * @returns {number}
+ */
+function getNextIndex(folder) {
+  const current = renameCounters.get(folder) || 1;
+  renameCounters.set(folder, current + 1);
+  return current;
+}
+
+/**
+ * Entry point: validate inputs, handle existing output directory,
+ * then kick off the directory traversal and optimization.
+ */
+async function main() {
+  // Validate source directory
+  if (!existsSync(srcDir)) {
+    console.error(`Input directory "${srcDir}" does not exist.`);
+    process.exit(1);
+  }
+
+  // Handle existing output directory
+  if (existsSync(destDir)) {
+    const existingFiles = await fs.readdir(destDir);
+    if (existingFiles.length > 0) {
+      let shouldDelete = forceDelete;
+      if (!forceDelete) {
+        const question = `Output directory "${path.relative(
+          process.cwd(),
+          destDir
+        )}" already contains ${existingFiles.length} item(s). Delete them first? [y/N] `;
+        shouldDelete = await askYesNo(question);
+      }
+      if (shouldDelete) {
+        await fs.rm(destDir, { recursive: true, force: true });
+        console.log('Previous optimized images deleted.');
+      }
+    }
+  }
+
+  // Create (or re-create) the output directory
+  await fs.mkdir(destDir, { recursive: true });
+
+  // Start processing
+  await processDirectory(srcDir);
+  console.log('✅ Done! Optimized images are in:', destDir);
+}
+
+// Invoke main() and catch any uncaught errors
+main().catch((err) => {
+  console.error('Fatal error:', err);
+  process.exit(1);
+});
