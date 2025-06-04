@@ -10,3 +10,7 @@
 /.yarn-error.log
 /.eslintcache
 /.cache
+
+# …except the placeholder we commit, so the dirs stay around
+!/input/.gitkeep
+!/output/.gitkeep
