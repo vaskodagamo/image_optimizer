@@ -63,7 +63,7 @@ node imageOptimizer.js -q 80
 
 # Custom paths + extra flags
 node imageOptimizer.js ./photos ./publish -q 85 -P 70 --rename --force-delete
-```
+````
 
 ---
 
