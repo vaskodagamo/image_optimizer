@@ -70,4 +70,8 @@ node imageOptimizer.js ./photos ./publish -q 85 -P 70 --rename --force-delete
 ## Requirements
 
 * **Node ≥ 18.17 LTS** (or 20+) suggested.
-* `npm install sharp`
+
+--
+
+## Installation
+* `npm install ` or `npm -i`
