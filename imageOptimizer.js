@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * imageOptimizerr.js
+ * imageOptimizer.js
  * -------------------------------------------------------------
  * Author: Lukas Vosylius
  * License: GNU General Public License v3.0

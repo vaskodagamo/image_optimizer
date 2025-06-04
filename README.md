@@ -57,17 +57,17 @@ node imageOptimizer.js ./raw ./web -q 85 --compress-png
 
 # Wipe output folder automatically, then process with defaults
 node imageOptimizer.js --force-delete
-```bash
+
 # Just run – uses ./input → ./output, keeps filenames, lossless PNG
 node imageOptimizer.js -q 80
 
 # Custom paths + extra flags
 node imageOptimizer.js ./photos ./publish -q 85 -P 70 --rename --force-delete
-````
+```
 
 ---
 
 ## Requirements
 
-* `npm install sharp`
 * **Node ≥ 18.17 LTS** (or 20+) suggested.
+* `npm install sharp`
