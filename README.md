@@ -71,7 +71,7 @@ node imageOptimizer.js ./photos ./publish -q 85 -P 70 --rename --force-delete
 
 * **Node ≥ 18.17 LTS** (or 20+) suggested.
 
---
+---
 
 ## Installation
 * `npm install ` or `npm -i`
